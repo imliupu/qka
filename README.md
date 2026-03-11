@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/qka)](https://pypi.org/project/qka/)
 
+
 **QKA** 聚焦 **QMT 实盘交易（客户端/服务端）**：
 - 服务端：将 `xtquant` 交易接口封装为 FastAPI API
 - 客户端：统一 `api(method_name, **params)` 调用
