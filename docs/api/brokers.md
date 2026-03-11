@@ -20,8 +20,9 @@ from qka.brokers.client import QMTClient
 
 # 创建交易客户端
 client = QMTClient(
-    base_url="http://localhost:8000",
-    token="服务器打印的token"
+    base_url="https://localhost:8443",
+    token="服务器打印的token",
+    verify=False  # 自签证书调试
 )
 
 # 调用交易接口
@@ -132,8 +133,9 @@ server.start()  # 会打印token供客户端使用
 from qka.brokers.client import QMTClient
 
 client = QMTClient(
-    base_url="http://localhost:8000",
-    token="服务器打印的token"
+    base_url="https://localhost:8443",
+    token="服务器打印的token",
+    verify=False  # 自签证书调试
 )
 
 # 查询账户信息
@@ -161,6 +163,21 @@ result = client.api(
 ## 相关链接
 
 - [用户指南 - 实盘交易](../../user-guide/trading.md)
-- [核心模块 API](core.md)
 - [工具模块 API](utils.md)
 - [xtquant 文档](https://github.com/ShiMiaoYS/xtquant)
+
+## HTTPS 参数
+
+`QMTServer` 支持 `ssl_certfile` 和 `ssl_keyfile`，可直接启用 TLS。
+
+```python
+server = QMTServer(
+    account_id="123456789",
+    mini_qmt_path="D:/qmt",
+    host="0.0.0.0",
+    port=8443,
+    ssl_certfile="/path/to/server.crt",
+    ssl_keyfile="/path/to/server.key",
+    require_https=True,
+)
+```
