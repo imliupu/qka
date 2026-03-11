@@ -161,6 +161,5 @@ result = client.api(
 ## 相关链接
 
 - [用户指南 - 实盘交易](../../user-guide/trading.md)
-- [核心模块 API](core.md)
 - [工具模块 API](utils.md)
 - [xtquant 文档](https://github.com/ShiMiaoYS/xtquant)
