@@ -1,32 +1,26 @@
 """
-QKA - 量化交易框架
+QKA - QMT 实盘交易框架
 
-统一的访问接口，支持 qka.xxx 的访问模式
+统一访问接口，聚焦 QMT 客户端/服务端功能。
 """
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 try:
     __version__ = version("qka")
 except PackageNotFoundError:
-    __version__ = "0.1.0"  # fallback version
+    __version__ = "0.1.0"
 
-# 核心功能直接导入
-from qka.core.data import Data
-from qka.core.backtest import Backtest
-from qka.core.strategy import Strategy
-
-# 子模块导入
-from qka import core, utils, mcp
-
-# 交易相关（有依赖的模块暂时不导入，避免导入错误）
-# from qka.brokers.trade import create_trader
-# from qka.brokers.client import QMTClient
-# from qka.brokers.server import QMTServer
+from qka.brokers.client import QMTClient
+from qka.brokers.server import QMTServer, qmt_server
+from qka.brokers.trade import create_trader
+from qka import brokers, utils
 
 __all__ = [
-    # 核心功能
-    'Data', 'Backtest', 'Strategy',
-    # 子模块
-    'core', 'utils', 'mcp'
+    "QMTClient",
+    "QMTServer",
+    "qmt_server",
+    "create_trader",
+    "brokers",
+    "utils",
 ]
