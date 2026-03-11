@@ -199,3 +199,163 @@ curl.exe -k -X POST https://127.0.0.1:8443/api/query_stock_asset -H "Content-Typ
 ## 免责声明
 
 实盘交易存在风险，请在了解风险与合规要求的前提下使用。
+
+## Windows 生产环境 HTTPS 部署教程（追加）
+
+> 本节是**生产环境**专用教程，基于上文 Windows 教程进一步加固。建议先完成上文“Windows HTTPS 部署教程”再执行本节。
+
+### 0. 目标与架构建议（先定方案）
+
+生产建议采用以下最小架构：
+
+1. **QMT Server 主机（Windows）**：仅运行 miniQMT + qka 服务。
+2. **策略执行主机**：只作为客户端调用 `https://QMT_SERVER:8443`。
+3. **网络隔离**：QMT Server 不直接暴露公网，只允许固定来源 IP（策略机/跳板机/VPN 网段）。
+
+### 1. 生产目录规划与权限
+
+建议固定目录（示例）：
+
+```powershell
+mkdir C:\qka\certs -Force
+mkdir C:\qka\run -Force
+mkdir C:\qka\logs -Force
+```
+
+将私钥和证书放在 `C:\qka\certs`，并确保：
+
+- `server.key` 仅运行服务的账号可读。
+- 非管理员/普通用户无读取权限。
+
+### 2. 证书方案（生产推荐）
+
+优先级建议：
+
+1. **企业内网 CA 证书（推荐）**
+2. 公网受信任 CA 证书（若你必须公网或跨网访问）
+3. 自签证书（仅临时，不建议长期生产）
+
+证书要求：
+
+- `CN/SAN` 必须包含客户端实际访问的域名/IP。
+- 有效期、续期计划、证书吊销策略需要提前制定。
+
+### 3. 解决 Windows OpenSSL `openssl.cnf` 报错（你遇到的典型问题）
+
+当出现：
+
+`Can't open "C:\Program Files\Common Files\ssl\/openssl.cnf" for reading`
+
+说明 OpenSSL 找不到配置文件。可选修复方式：
+
+#### 方式 A：设置环境变量（推荐）
+
+```powershell
+$env:OPENSSL_CONF="C:\Program Files\OpenSSL-Win64\bin\openssl.cfg"
+```
+
+> 路径按你本机 OpenSSL 实际安装位置调整；可先 `where openssl` 确认。
+
+#### 方式 B：命令中显式指定配置文件
+
+```powershell
+openssl req -config "C:\Program Files\OpenSSL-Win64\bin\openssl.cfg" -x509 -nodes -newkey rsa:2048 `
+  -keyout C:\qka\certs\server.key `
+  -out C:\qka\certs\server.crt `
+  -days 365 `
+  -subj "/C=CN/ST=Beijing/L=Beijing/O=QKA/OU=Trading/CN=qmt.example.local"
+```
+
+### 4. 生产服务端启动脚本（环境变量读取敏感信息）
+
+新建 `C:\qka\run\start_server_prod.py`：
+
+```python
+import os
+from qka import QMTServer
+
+account_id = os.environ["QKA_ACCOUNT_ID"]
+mini_qmt_path = os.environ["QKA_MINI_QMT_PATH"]
+token = os.environ["QKA_TOKEN"]
+
+server = QMTServer(
+    account_id=account_id,
+    mini_qmt_path=mini_qmt_path,
+    host="0.0.0.0",
+    port=8443,
+    ssl_certfile=r"C:\qka\certs\server.crt",
+    ssl_keyfile=r"C:\qka\certs\server.key",
+    require_https=True,
+    token=token,
+)
+
+server.start()
+```
+
+设置环境变量（当前 PowerShell 会话）：
+
+```powershell
+$env:QKA_ACCOUNT_ID="YOUR_ACCOUNT_ID"
+$env:QKA_MINI_QMT_PATH="D:\miniQMT"
+$env:QKA_TOKEN="REPLACE_WITH_A_LONG_RANDOM_TOKEN"
+python C:\qka\run\start_server_prod.py
+```
+
+> 生产中不要把 token 硬编码到仓库文件。
+
+### 5. 防火墙最小开放策略（必须）
+
+仅允许可信来源访问 8443。示例（将 `10.10.10.20` 替换为策略机 IP）：
+
+```powershell
+New-NetFirewallRule -DisplayName "QKA HTTPS Inbound" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8443 -RemoteAddress 10.10.10.20
+```
+
+若存在旧的 8000 明文端口策略，请删除或禁用对应规则。
+
+### 6. 生产客户端示例（启用证书校验）
+
+```python
+from qka import QMTClient
+
+client = QMTClient(
+    base_url="https://qmt.example.local:8443",
+    token="PROD_TOKEN",
+    verify=r"C:\qka\certs\ca_bundle.pem",  # 或 True（系统信任链）
+    timeout=10,
+)
+
+print(client.api("query_stock_asset"))
+```
+
+注意：
+
+- 生产禁止长期 `verify=False`。
+- 若是内网 CA，客户端必须安装/信任对应 CA。
+
+### 7. 生产验收检查清单（逐项打勾）
+
+1. 使用 `https://` 地址可访问服务。
+2. 不带 `X-Token` 请求返回 401。
+3. 带正确 token 请求返回业务结果。
+4. `verify=True` 或 CA 校验模式下调用成功。
+5. 错误 token、错误来源 IP 被拒绝。
+6. 证书过期时间已登记到监控/日历（提前 30 天提醒）。
+
+### 8. 运行维护（建议）
+
+- **Token 轮换**：按周/月轮换，并在策略端同步更新。
+- **证书轮换**：至少年更，过期前完成灰度替换。
+- **日志审计**：记录调用来源、接口名、时间、结果摘要（避免泄露敏感字段）。
+- **灾备演练**：定期验证服务重启、证书替换、token 轮换流程。
+
+### 9. 常见故障快速定位（生产高频）
+
+1. `SSL: CERTIFICATE_VERIFY_FAILED`
+   - 客户端未信任签发 CA；或域名与证书不匹配。
+2. `401 Invalid token`
+   - token 不一致、包含空格、服务端重启后 token 已变更（若你未固定配置）。
+3. 连接超时
+   - 防火墙未放行、端口未监听、证书路径错误导致服务启动失败。
+4. OpenSSL 配置文件错误
+   - 按“第 3 节”设置 `OPENSSL_CONF` 或 `-config` 参数。
