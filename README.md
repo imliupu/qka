@@ -4,7 +4,8 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/qka)](https://pypi.org/project/qka/)
 
-**QKA** 现在聚焦于 **QMT 实盘交易（客户端/服务端）**：
+
+**QKA** 聚焦 **QMT 实盘交易（客户端/服务端）**：
 - 服务端：将 `xtquant` 交易接口封装为 FastAPI API
 - 客户端：统一 `api(method_name, **params)` 调用
 - 回调日志：提供委托、成交、错误等事件日志
@@ -17,7 +18,7 @@ pip install qka
 
 ## 快速开始
 
-### 1. 启动 QMT 交易服务器
+### 1. 启动 QMT 交易服务器（HTTP）
 
 ```python
 from qka import QMTServer
@@ -32,24 +33,39 @@ server = QMTServer(
 server.start()
 ```
 
-启动后会输出 token，客户端调用时需要放在 `X-Token`。
+### 2. 启动 QMT 交易服务器（HTTPS）
 
-### 2. 使用客户端调用交易接口
+```python
+from qka import QMTServer
+
+server = QMTServer(
+    account_id="YOUR_ACCOUNT_ID",
+    mini_qmt_path="YOUR_QMT_PATH",
+    host="0.0.0.0",
+    port=8443,
+    ssl_certfile="/path/to/server.crt",
+    ssl_keyfile="/path/to/server.key",
+    require_https=True,
+)
+
+server.start()
+```
+
+### 3. 使用客户端调用交易接口
 
 ```python
 from qka import QMTClient
 from xtquant import xtconstant
 
 client = QMTClient(
-    base_url="http://localhost:8000",
+    base_url="https://localhost:8443",
     token="SERVER_PRINTED_TOKEN",
+    verify=False,  # 自签证书调试时可设为 False，生产环境请使用受信任证书并保持 True
 )
 
-# 查询资产
 assets = client.api("query_stock_asset")
 print(assets)
 
-# 下单
 result = client.api(
     "order_stock",
     stock_code="600000.SH",
@@ -60,6 +76,14 @@ result = client.api(
 )
 print(result)
 ```
+
+## 安全建议（实盘必须）
+
+- 使用 `HTTPS`（`ssl_certfile` + `ssl_keyfile`），并在公网部署时开启 `require_https=True`。
+- 显式传入高强度 `token`（建议密码管理器生成），不要复用旧 token。
+- 通过防火墙/IP 白名单限制来源，仅开放给策略执行机。
+- 把服务运行在内网或 VPN，不建议裸露公网。
+- 增加交易风控（下单白名单、最大单笔/单日限额、撤单频率限制）。
 
 ## 核心模块
 
