@@ -239,6 +239,23 @@ mkdir C:\qka\logs -Force
 > 以下为你提供的流程，已改成 **Windows PowerShell** 可直接执行版本。
 > 若遇到 `openssl.cnf` 报错，先看下一节“### 3. 解决 Windows OpenSSL openssl.cnf 报错”。
 
+先给你一个一键脚本（推荐）：
+
+```powershell
+# 在仓库根目录执行
+powershell -ExecutionPolicy Bypass -File .\generate_qka_certs.ps1
+```
+
+脚本会自动：
+
+- 生成合法 CA（含 `CA:TRUE` / `keyCertSign`）
+- 生成服务端证书（含 `SAN` 与 `serverAuth`）
+- 最后执行 `openssl verify` 验证证书链
+
+脚本位置：`generate_qka_certs.ps1`。
+
+如果你更希望手工执行，再用下面分步命令：
+
 1. 创建 CA（根证书）
 
 ```powershell
