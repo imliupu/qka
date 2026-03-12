@@ -236,85 +236,25 @@ mkdir C:\qka\logs -Force
 
 #### 3）自签证书（仅临时，不建议长期生产）
 
-> 以下为你提供的流程，已改成 **Windows PowerShell** 可直接执行版本。
-> 若遇到 `openssl.cnf` 报错，先看下一节“### 3. 解决 Windows OpenSSL openssl.cnf 报错”。
+> 推荐直接使用仓库提供的 `generate_qka_certs.ps1` + `openssl.cnf` 生成，不再建议手工分步执行。
 
-先给你一个一键脚本（推荐）：
+执行命令（在仓库根目录）：
 
 ```powershell
-# 在仓库根目录执行
-powershell -ExecutionPolicy Bypass -File .\generate_qka_certs.ps1
+powershell .\generate_qka_certs.ps1
 ```
 
-脚本会自动：
+脚本会自动完成：
 
-- 生成合法 CA（含 `CA:TRUE` / `keyCertSign`）
+- 使用仓库内 `openssl.cnf` 生成合法 CA（含 `CA:TRUE` / `keyCertSign`）
 - 生成服务端证书（含 `SAN` 与 `serverAuth`）
-- 最后执行 `openssl verify` 验证证书链
+- 执行 `openssl verify` 验证证书链
 
-脚本位置：`generate_qka_certs.ps1`。
+生成文件位于：`./certs`
 
-如果你更希望手工执行，再用下面分步命令：
-
-1. 创建 CA（根证书）
-
-```powershell
-cd C:\qka\certs
-
-# 生成 CA 私钥
-openssl genrsa -out ca.key 4096
-
-# 生成 CA 证书（有效期 10 年）
-openssl req -x509 -new -nodes `
-  -key ca.key `
-  -sha256 -days 3650 `
-  -out ca.pem
-```
-
-生成结果：
-
-- `ca.key`（CA 私钥）
-- `ca.pem`（CA 证书）
-
-2. 创建服务器证书请求材料
-
-```powershell
-cd C:\qka\certs
-
-# 生成服务器私钥
-openssl genrsa -out server.key 2048
-
-# 生成 CSR（证书签名请求）
-openssl req -new -key server.key -out server.csr
-```
-
-3. 用 CA 签发服务器证书
-
-```powershell
-cd C:\qka\certs
-
-openssl x509 -req `
-  -in server.csr `
-  -CA ca.pem `
-  -CAkey ca.key `
-  -CAcreateserial `
-  -out server.crt `
-  -days 365 `
-  -sha256
-```
-
-生成结果：
-
-- `server.crt`
-- `server.key`
-
-4. 服务端与客户端如何使用
-
-- 服务端 `QMTServer` 使用：
-  - `ssl_certfile="C:\\qka\\certs\\server.crt"`
-  - `ssl_keyfile="C:\\qka\\certs\\server.key"`
-- 客户端请开启证书校验并信任 CA：
-  - `verify="C:\\qka\\certs\\ca.pem"`
+- `ca.pem`（客户端 `verify` 使用）
+- `server.crt`（服务端 `ssl_certfile`）
+- `server.key`（服务端 `ssl_keyfile`）
 
 > 提醒：自签证书适合内网临时联调。正式生产建议切换企业 CA 或公网受信任 CA。
 
