@@ -1,9 +1,12 @@
 """QKA交易客户端模块。"""
 
+import atexit
 import hashlib
 import hmac
 import json
+import os
 import secrets
+import tempfile
 import time
 from typing import Any, Dict, Optional, Union
 
@@ -31,7 +34,38 @@ class QMTClient:
         self.api_key = api_key
         self.api_secret = api_secret
         self.timeout = timeout
-        self.verify = verify
+        self._verify_temp_file: Optional[str] = None
+        self.verify = self._resolve_verify(verify)
+
+    def _resolve_verify(self, verify: Union[bool, str]) -> Union[bool, str]:
+        """解析 verify 参数：支持 bool、PEM 文件路径或 PEM 字符串内容。"""
+        if isinstance(verify, bool):
+            return verify
+
+        if not isinstance(verify, str):
+            raise ValueError("verify 仅支持 bool、PEM 文件路径或 PEM 字符串")
+
+        verify_text = verify.strip()
+        if os.path.isfile(verify_text):
+            return verify_text
+
+        if "BEGIN CERTIFICATE" in verify_text:
+            fd, temp_path = tempfile.mkstemp(prefix="qka_ca_", suffix=".pem")
+            with os.fdopen(fd, "w", encoding="utf-8") as pem_file:
+                pem_file.write(verify_text)
+
+            self._verify_temp_file = temp_path
+            atexit.register(self._cleanup_temp_verify_file)
+            return temp_path
+
+        raise ValueError("verify 字符串既不是有效文件路径，也不是 PEM 证书内容")
+
+    def _cleanup_temp_verify_file(self):
+        if self._verify_temp_file and os.path.exists(self._verify_temp_file):
+            try:
+                os.remove(self._verify_temp_file)
+            except OSError:
+                pass
 
     def _generate_sign(self, timestamp: str, nonce: str, body_text: str) -> str:
         payload = f"{self.api_key}\n{timestamp}\n{nonce}\n{body_text}"

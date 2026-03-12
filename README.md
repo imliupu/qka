@@ -77,6 +77,12 @@ result = client.api(
 print(result)
 ```
 
+`QMTClient(verify=...)` 现支持三种方式：
+
+- `verify=True`：使用系统信任链校验证书（生产推荐）
+- `verify=r"C:\\qka\\certs\\ca.pem"`：指定 CA PEM 文件路径
+- `verify="-----BEGIN CERTIFICATE-----..."`：直接传 PEM 字符串（客户端无法落盘 `ca.pem` 时可用，库会临时写入文件用于校验）
+
 
 ## Windows HTTPS 部署教程（推荐）
 
