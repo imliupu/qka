@@ -33,7 +33,7 @@ server = QMTServer(
 )
 
 # 启动服务器
-server.start()  # 会打印token供客户端使用
+server.start()  # 会打印 API Key / API Secret 供客户端使用
 ```
 
 ### 3. 使用交易客户端
@@ -44,7 +44,8 @@ from qka.brokers.client import QMTClient
 # 创建交易客户端
 client = QMTClient(
     base_url="http://localhost:8000",  # 服务器地址
-    token="服务器打印的token"           # 访问令牌
+    api_key="服务器打印的API Key",      # 访问标识
+    api_secret="服务器打印的API Secret"  # 签名密钥
 )
 ```
 
