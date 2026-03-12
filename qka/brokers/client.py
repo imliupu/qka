@@ -1,72 +1,111 @@
-"""
-QKA交易客户端模块
+"""QKA交易客户端模块。"""
 
-提供QMT交易服务器的客户端接口，支持远程调用交易功能。
-"""
+import atexit
+import hashlib
+import hmac
+import json
+import os
+import secrets
+import tempfile
+import time
+from typing import Any, Dict, Optional, Union
 
 import requests
-from typing import Any, Dict, Optional
+
 from qka.utils.logger import logger
 
+
 class QMTClient:
-    """
-    QMT交易客户端类
-    
-    提供与QMT交易服务器的通信接口，支持各种交易操作。
-    
-    Attributes:
-        base_url (str): API服务器地址
-        session (requests.Session): HTTP会话对象
-        token (str): 访问令牌
-        headers (Dict): HTTP请求头
-    """
-    
-    def __init__(self, base_url: str = "http://localhost:8000", token: Optional[str] = None):
-        """
-        初始化交易客户端
-        
-        Args:
-            base_url (str): API服务器地址，默认为本地8000端口
-            token (str): 访问令牌，必须与服务器的token一致
-            
-        Raises:
-            ValueError: 如果未提供token
-        """
-        self.base_url = base_url.rstrip('/')
+    """QMT交易客户端类。"""
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8000",
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+        timeout: float = 10.0,
+        verify: Union[bool, str] = True,
+    ):
+        self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
-        if not token:
-            raise ValueError("必须提供访问令牌(token)")
-        self.token = token
-        self.headers = {"X-Token": self.token}
+        if not api_key or not api_secret:
+            raise ValueError("必须同时提供 api_key 和 api_secret")
+
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.timeout = timeout
+        self._verify_temp_file: Optional[str] = None
+        self.verify = self._resolve_verify(verify)
+
+    def _resolve_verify(self, verify: Union[bool, str]) -> Union[bool, str]:
+        """解析 verify 参数：支持 bool、PEM 文件路径或 PEM 字符串内容。"""
+        if isinstance(verify, bool):
+            return verify
+
+        if not isinstance(verify, str):
+            raise ValueError("verify 仅支持 bool、PEM 文件路径或 PEM 字符串")
+
+        verify_text = verify.strip()
+        if os.path.isfile(verify_text):
+            return verify_text
+
+        if "BEGIN CERTIFICATE" in verify_text:
+            fd, temp_path = tempfile.mkstemp(prefix="qka_ca_", suffix=".pem")
+            with os.fdopen(fd, "w", encoding="utf-8") as pem_file:
+                pem_file.write(verify_text)
+
+            self._verify_temp_file = temp_path
+            atexit.register(self._cleanup_temp_verify_file)
+            return temp_path
+
+        raise ValueError("verify 字符串既不是有效文件路径，也不是 PEM 证书内容")
+
+    def _cleanup_temp_verify_file(self):
+        if self._verify_temp_file and os.path.exists(self._verify_temp_file):
+            try:
+                os.remove(self._verify_temp_file)
+            except OSError:
+                pass
+
+    def _generate_sign(self, timestamp: str, nonce: str, body_text: str) -> str:
+        payload = f"{self.api_key}\n{timestamp}\n{nonce}\n{body_text}"
+        return hmac.new(
+            self.api_secret.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _build_headers(self, body_text: str) -> Dict[str, str]:
+        timestamp = str(int(time.time()))
+        nonce = secrets.token_urlsafe(16)
+        sign = self._generate_sign(timestamp, nonce, body_text)
+        return {
+            "X-API-Key": self.api_key,
+            "X-Timestamp": timestamp,
+            "X-Nonce": nonce,
+            "X-Sign": sign,
+            "Content-Type": "application/json",
+        }
 
     def api(self, method_name: str, **params) -> Any:
-        """
-        通用调用接口方法
-        
-        Args:
-            method_name (str): 要调用的接口名称
-            **params: 接口参数，作为关键字参数传入
-            
-        Returns:
-            Any: 接口返回的数据
-            
-        Raises:
-            Exception: API调用失败时抛出异常
-        """
+        """通用调用接口方法。"""
         try:
+            payload = params or {}
+            body_text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             response = self.session.post(
                 f"{self.base_url}/api/{method_name}",
-                json=params or {},
-                headers=self.headers
+                data=body_text.encode("utf-8"),
+                headers=self._build_headers(body_text),
+                timeout=self.timeout,
+                verify=self.verify,
             )
             response.raise_for_status()
             result = response.json()
-            
-            if not result.get('success'):
+
+            if not result.get("success"):
                 raise Exception(f"API调用失败: {result.get('detail')}")
-            
-            return result.get('data')
+
+            return result.get("data")
         except Exception as e:
             logger.error(f"调用 {method_name} 失败: {str(e)}")
             raise
-
