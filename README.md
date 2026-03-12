@@ -58,7 +58,8 @@ from xtquant import xtconstant
 
 client = QMTClient(
     base_url="https://localhost:8443",
-    token="SERVER_PRINTED_TOKEN",
+    api_key="SERVER_PRINTED_API_KEY",
+    api_secret="SERVER_PRINTED_API_SECRET",
     verify=False,  # 自签证书调试时可设为 False，生产环境请使用受信任证书并保持 True
 )
 
@@ -121,21 +122,22 @@ server = QMTServer(
     ssl_certfile=r"C:\qka\certs\server.crt",
     ssl_keyfile=r"C:\qka\certs\server.key",
     require_https=True,
-    # 生产建议显式设置 token，便于运维管理
-    token="REPLACE_WITH_A_STRONG_TOKEN",
+    # 生产建议显式设置 api_key/api_secret，便于运维管理
+    api_key="REPLACE_WITH_API_KEY",
+    api_secret="REPLACE_WITH_API_SECRET",
 )
 
 server.start()
 ```
 
-### 步骤 4：启动服务并获取 token
+### 步骤 4：启动服务并获取 API 凭证
 
 ```powershell
 python C:\qka\run\start_server.py
 ```
 
-- 如果你没有在代码中显式传 `token`，启动日志会打印：`授权Token: ...`。
-- 该 token 需要在客户端作为 `X-Token` 使用。
+- 如果你没有在代码中显式传 `api_key/api_secret`，启动日志会打印：`授权API Key` 和 `授权API Secret`。
+- 客户端每次请求会自动生成 `X-Timestamp`、`X-Nonce` 并计算 `X-Sign`，你只需提供 `api_key/api_secret`。
 
 ### 步骤 5：Windows 客户端调用（HTTPS）
 
@@ -146,7 +148,8 @@ from qka import QMTClient
 
 client = QMTClient(
     base_url="https://127.0.0.1:8443",
-    token="SERVER_PRINTED_OR_CONFIGURED_TOKEN",
+    api_key="SERVER_PRINTED_OR_CONFIGURED_API_KEY",
+    api_secret="SERVER_PRINTED_OR_CONFIGURED_API_SECRET",
     verify=False,  # 自签证书调试阶段可用；生产请改为 True 或 CA 路径
     timeout=10,
 )
@@ -163,29 +166,25 @@ python C:\qka\run\client_demo.py
 
 ### 步骤 6：连通性与鉴权检查（PowerShell）
 
-1) 不带 token，预期 401：
+1) 缺少签名头，预期 401：
 
 ```powershell
 curl.exe -k -X POST https://127.0.0.1:8443/api/query_stock_asset -H "Content-Type: application/json" -d "{}"
 ```
 
-2) 带 token，预期成功返回：
-
-```powershell
-curl.exe -k -X POST https://127.0.0.1:8443/api/query_stock_asset -H "Content-Type: application/json" -H "X-Token: YOUR_TOKEN" -d "{}"
-```
+2) 使用 `QMTClient`（自动签名）调用，预期成功返回。
 
 ### 步骤 7：Windows 生产建议
 
 - 防火墙只放行 8443 到指定来源 IP，避免公网裸露。
 - 证书与私钥设置访问权限，仅服务账号可读。
 - 避免长期 `verify=False`。
-- token 定期轮换，建议通过环境变量/密钥管理下发。
+- API Secret 定期轮换，建议通过环境变量/密钥管理下发。
 
 ## 安全建议（实盘必须）
 
 - 使用 `HTTPS`（`ssl_certfile` + `ssl_keyfile`），并在公网部署时开启 `require_https=True`。
-- 显式传入高强度 `token`（建议密码管理器生成），不要复用旧 token。
+- 显式传入高强度 `api_key/api_secret`（建议密码管理器生成），不要复用旧密钥。
 - 通过防火墙/IP 白名单限制来源，仅开放给策略执行机。
 - 把服务运行在内网或 VPN，不建议裸露公网。
 - 增加交易风控（下单白名单、最大单笔/单日限额、撤单频率限制）。
@@ -276,7 +275,8 @@ from qka import QMTServer
 
 account_id = os.environ["QKA_ACCOUNT_ID"]
 mini_qmt_path = os.environ["QKA_MINI_QMT_PATH"]
-token = os.environ["QKA_TOKEN"]
+api_key = os.environ["QKA_API_KEY"]
+api_secret = os.environ["QKA_API_SECRET"]
 
 server = QMTServer(
     account_id=account_id,
@@ -286,7 +286,8 @@ server = QMTServer(
     ssl_certfile=r"C:\qka\certs\server.crt",
     ssl_keyfile=r"C:\qka\certs\server.key",
     require_https=True,
-    token=token,
+    api_key=api_key,
+    api_secret=api_secret,
 )
 
 server.start()
@@ -297,11 +298,12 @@ server.start()
 ```powershell
 $env:QKA_ACCOUNT_ID="YOUR_ACCOUNT_ID"
 $env:QKA_MINI_QMT_PATH="D:\miniQMT"
-$env:QKA_TOKEN="REPLACE_WITH_A_LONG_RANDOM_TOKEN"
+$env:QKA_API_KEY="REPLACE_WITH_API_KEY"
+$env:QKA_API_SECRET="REPLACE_WITH_A_LONG_RANDOM_SECRET"
 python C:\qka\run\start_server_prod.py
 ```
 
-> 生产中不要把 token 硬编码到仓库文件。
+> 生产中不要把 api_secret 硬编码到仓库文件。
 
 ### 5. 防火墙最小开放策略（必须）
 
@@ -320,7 +322,8 @@ from qka import QMTClient
 
 client = QMTClient(
     base_url="https://qmt.example.local:8443",
-    token="PROD_TOKEN",
+    api_key="PROD_API_KEY",
+    api_secret="PROD_API_SECRET",
     verify=r"C:\qka\certs\ca_bundle.pem",  # 或 True（系统信任链）
     timeout=10,
 )
@@ -336,25 +339,25 @@ print(client.api("query_stock_asset"))
 ### 7. 生产验收检查清单（逐项打勾）
 
 1. 使用 `https://` 地址可访问服务。
-2. 不带 `X-Token` 请求返回 401。
-3. 带正确 token 请求返回业务结果。
+2. 缺少签名头请求返回 401。
+3. 带正确签名请求返回业务结果。
 4. `verify=True` 或 CA 校验模式下调用成功。
-5. 错误 token、错误来源 IP 被拒绝。
+5. 错误签名、重复 Nonce、错误来源 IP 被拒绝。
 6. 证书过期时间已登记到监控/日历（提前 30 天提醒）。
 
 ### 8. 运行维护（建议）
 
-- **Token 轮换**：按周/月轮换，并在策略端同步更新。
+- **API Secret 轮换**：按周/月轮换，并在策略端同步更新。
 - **证书轮换**：至少年更，过期前完成灰度替换。
 - **日志审计**：记录调用来源、接口名、时间、结果摘要（避免泄露敏感字段）。
-- **灾备演练**：定期验证服务重启、证书替换、token 轮换流程。
+- **灾备演练**：定期验证服务重启、证书替换、API Secret 轮换流程。
 
 ### 9. 常见故障快速定位（生产高频）
 
 1. `SSL: CERTIFICATE_VERIFY_FAILED`
    - 客户端未信任签发 CA；或域名与证书不匹配。
-2. `401 Invalid token`
-   - token 不一致、包含空格、服务端重启后 token 已变更（若你未固定配置）。
+2. `401` 鉴权失败
+   - API Key 不一致、Sign 算法/请求体不一致、Timestamp 过期、Nonce 重复。
 3. 连接超时
    - 防火墙未放行、端口未监听、证书路径错误导致服务启动失败。
 4. OpenSSL 配置文件错误
