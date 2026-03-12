@@ -234,6 +234,73 @@ mkdir C:\qka\logs -Force
 2. 公网受信任 CA 证书（若你必须公网或跨网访问）
 3. 自签证书（仅临时，不建议长期生产）
 
+#### 3）自签证书（仅临时，不建议长期生产）
+
+> 以下为你提供的流程，已改成 **Windows PowerShell** 可直接执行版本。
+> 若遇到 `openssl.cnf` 报错，先看下一节“### 3. 解决 Windows OpenSSL openssl.cnf 报错”。
+
+1. 创建 CA（根证书）
+
+```powershell
+cd C:\qka\certs
+
+# 生成 CA 私钥
+openssl genrsa -out ca.key 4096
+
+# 生成 CA 证书（有效期 10 年）
+openssl req -x509 -new -nodes `
+  -key ca.key `
+  -sha256 -days 3650 `
+  -out ca.pem
+```
+
+生成结果：
+
+- `ca.key`（CA 私钥）
+- `ca.pem`（CA 证书）
+
+2. 创建服务器证书请求材料
+
+```powershell
+cd C:\qka\certs
+
+# 生成服务器私钥
+openssl genrsa -out server.key 2048
+
+# 生成 CSR（证书签名请求）
+openssl req -new -key server.key -out server.csr
+```
+
+3. 用 CA 签发服务器证书
+
+```powershell
+cd C:\qka\certs
+
+openssl x509 -req `
+  -in server.csr `
+  -CA ca.pem `
+  -CAkey ca.key `
+  -CAcreateserial `
+  -out server.crt `
+  -days 365 `
+  -sha256
+```
+
+生成结果：
+
+- `server.crt`
+- `server.key`
+
+4. 服务端与客户端如何使用
+
+- 服务端 `QMTServer` 使用：
+  - `ssl_certfile="C:\\qka\\certs\\server.crt"`
+  - `ssl_keyfile="C:\\qka\\certs\\server.key"`
+- 客户端请开启证书校验并信任 CA：
+  - `verify="C:\\qka\\certs\\ca.pem"`
+
+> 提醒：自签证书适合内网临时联调。正式生产建议切换企业 CA 或公网受信任 CA。
+
 证书要求：
 
 - `CN/SAN` 必须包含客户端实际访问的域名/IP。
