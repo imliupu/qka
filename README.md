@@ -242,12 +242,12 @@ mkdir C:\qka\logs -Force
 
 #### 3）自签证书（仅临时，不建议长期生产）
 
-> 推荐直接使用仓库提供的 `generate_qka_certs.ps1` + `openssl.cnf` 生成，不再建议手工分步执行。
+> 推荐直接使用仓库提供的 `generate_qka_certs.bat` + `openssl.cnf` 生成，不再建议手工分步执行。
 
 执行命令（在仓库根目录）：
 
 ```powershell
-powershell .\generate_qka_certs.ps1
+.\generate_qka_certs.bat
 ```
 
 脚本会自动完成：
