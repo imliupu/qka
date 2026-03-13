@@ -84,51 +84,20 @@ print(result)
 - `verify="-----BEGIN CERTIFICATE-----..."`：直接传 PEM 字符串（客户端无法落盘 `ca.pem` 时可用，库会临时写入文件用于校验）
 
 
-## Windows HTTPS 部署教程（推荐）
+## Windows 快速跑通（HTTP）
 
-以下步骤适用于 **Windows + miniQMT** 场景，按顺序执行即可。
+如果你只是先验证联通性与签名流程，建议先用 HTTP 跑通（不涉及证书）。
 
-### 步骤 1：准备目录
-
-建议先创建固定目录，避免路径变更：
-
-```powershell
-mkdir C:\qka\certs -Force
-mkdir C:\qka\run -Force
-```
-
-### 步骤 2：生成自签证书（开发/内网）
-
-使用 OpenSSL 生成证书（若未安装 OpenSSL，可用 Git for Windows 自带或手动安装）。
-
-```powershell
-openssl req -x509 -nodes -newkey rsa:2048 `
-  -keyout C:\qka\certs\server.key `
-  -out C:\qka\certs\server.crt `
-  -days 365 `
-  -subj "/C=CN/ST=Beijing/L=Beijing/O=QKA/OU=Trading/CN=127.0.0.1"
-```
-
-> 说明：
-> - 开发调试可用自签证书。
-> - 生产环境请改为受信任 CA 证书，并在客户端开启证书校验。
-
-### 步骤 3：编写服务端启动脚本
-
-新建 `C:\qka\run\start_server.py`：
+1) 启动服务端：
 
 ```python
 from qka import QMTServer
 
 server = QMTServer(
     account_id="YOUR_ACCOUNT_ID",
-    mini_qmt_path=r"D:\miniQMT",  # 改成你的 miniQMT 路径
+    mini_qmt_path=r"D:\miniQMT",
     host="0.0.0.0",
-    port=8443,
-    ssl_certfile=r"C:\qka\certs\server.crt",
-    ssl_keyfile=r"C:\qka\certs\server.key",
-    require_https=True,
-    # 生产建议显式设置 api_key/api_secret，便于运维管理
+    port=8000,
     api_key="REPLACE_WITH_API_KEY",
     api_secret="REPLACE_WITH_API_SECRET",
 )
@@ -136,56 +105,23 @@ server = QMTServer(
 server.start()
 ```
 
-### 步骤 4：启动服务并获取 API 凭证
-
-```powershell
-python C:\qka\run\start_server.py
-```
-
-- 如果你没有在代码中显式传 `api_key/api_secret`，启动日志会打印：`授权API Key` 和 `授权API Secret`。
-- 客户端每次请求会自动生成 `X-Timestamp`、`X-Nonce` 并计算 `X-Sign`，你只需提供 `api_key/api_secret`。
-
-### 步骤 5：Windows 客户端调用（HTTPS）
-
-新建 `C:\qka\run\client_demo.py`：
+2) 客户端调用：
 
 ```python
 from qka import QMTClient
 
 client = QMTClient(
-    base_url="https://127.0.0.1:8443",
-    api_key="SERVER_PRINTED_OR_CONFIGURED_API_KEY",
-    api_secret="SERVER_PRINTED_OR_CONFIGURED_API_SECRET",
-    verify=False,  # 自签证书调试阶段可用；生产请改为 True 或 CA 路径
+    base_url="http://127.0.0.1:8000",
+    api_key="REPLACE_WITH_API_KEY",
+    api_secret="REPLACE_WITH_API_SECRET",
+    verify=False,  # HTTP 场景无证书校验意义，保持默认流程即可
     timeout=10,
 )
 
-assets = client.api("query_stock_asset")
-print(assets)
+print(client.api("query_stock_asset"))
 ```
 
-运行：
-
-```powershell
-python C:\qka\run\client_demo.py
-```
-
-### 步骤 6：连通性与鉴权检查（PowerShell）
-
-1) 缺少签名头，预期 401：
-
-```powershell
-curl.exe -k -X POST https://127.0.0.1:8443/api/query_stock_asset -H "Content-Type: application/json" -d "{}"
-```
-
-2) 使用 `QMTClient`（自动签名）调用，预期成功返回。
-
-### 步骤 7：Windows 生产建议
-
-- 防火墙只放行 8443 到指定来源 IP，避免公网裸露。
-- 证书与私钥设置访问权限，仅服务账号可读。
-- 避免长期 `verify=False`。
-- API Secret 定期轮换，建议通过环境变量/密钥管理下发。
+> 实盘上线请使用下方“Windows 生产环境 HTTPS 部署教程（完整）”，不要长期使用 HTTP。
 
 ## 安全建议（实盘必须）
 
@@ -205,9 +141,9 @@ curl.exe -k -X POST https://127.0.0.1:8443/api/query_stock_asset -H "Content-Typ
 
 实盘交易存在风险，请在了解风险与合规要求的前提下使用。
 
-## Windows 生产环境 HTTPS 部署教程（追加）
+## Windows 生产环境 HTTPS 部署教程（完整）
 
-> 本节是**生产环境**专用教程，基于上文 Windows 教程进一步加固。建议先完成上文“Windows HTTPS 部署教程”再执行本节。
+> 本节是 **Windows 生产环境** 专用 HTTPS 部署教程（完整版本），按顺序执行即可。
 
 ### 0. 目标与架构建议（先定方案）
 
@@ -323,6 +259,18 @@ server = QMTServer(
 server.start()
 ```
 
+参数说明（服务端）：
+
+- `account_id`：券商资金账号（字符串）。
+- `mini_qmt_path`：miniQMT 安装目录，例如 `D:\miniQMT`。
+- `host`：监听地址，生产建议仅内网地址；若用 `0.0.0.0` 必须配防火墙白名单。
+- `port`：监听端口，建议固定 `8443`。
+- `ssl_certfile`：服务器证书文件路径（`.crt`/`.pem`）。
+- `ssl_keyfile`：服务器私钥文件路径（`.key`）。
+- `require_https`：是否强制 HTTPS；生产必须 `True`。
+- `api_key`：客户端身份标识，建议 24+ 随机字符。
+- `api_secret`：签名密钥，建议 32+ 随机字符并通过环境变量注入。
+
 设置环境变量（当前 PowerShell 会话）：
 
 ```powershell
@@ -360,6 +308,17 @@ client = QMTClient(
 
 print(client.api("query_stock_asset"))
 ```
+
+参数说明（客户端）：
+
+- `base_url`：服务地址，生产必须 `https://...:8443`。
+- `api_key`：需与服务端一致。
+- `api_secret`：需与服务端一致，用于请求签名。
+- `verify`：
+  - `True`：使用系统信任链（推荐）。
+  - `r"C:\path\ca.pem"`：指定 CA 证书路径。
+  - `"-----BEGIN CERTIFICATE-----..."`：直接传 PEM 字符串（库会临时落盘用于校验）。
+- `timeout`：请求超时时间（秒），建议 5~15 秒。
 
 注意：
 
