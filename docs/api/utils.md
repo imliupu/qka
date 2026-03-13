@@ -92,6 +92,4 @@ from qka.utils.anis import RED, GREEN, BLUE, RESET
 
 ## 相关链接
 
-- [核心模块 API](core.md)
 - [交易模块 API](brokers.md)
-- [用户指南 - 日志系统](../../user-guide/logging.md)
