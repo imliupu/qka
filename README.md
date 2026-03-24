@@ -24,7 +24,7 @@ from qka import QMTServer
 
 server = QMTServer(
     account_id="YOUR_ACCOUNT_ID",
-    mini_qmt_path="YOUR_QMT_PATH",
+    mini_qmt_path="YOUR_USERDATA_MINI_PATH",
     host="0.0.0.0",
     port=8000,
 )
@@ -39,7 +39,7 @@ from qka import QMTServer
 
 server = QMTServer(
     account_id="YOUR_ACCOUNT_ID",
-    mini_qmt_path="YOUR_QMT_PATH",
+    mini_qmt_path="YOUR_USERDATA_MINI_PATH",
     host="0.0.0.0",
     port=8443,
     ssl_certfile="/path/to/server.crt",
@@ -95,7 +95,7 @@ from qka import QMTServer
 
 server = QMTServer(
     account_id="YOUR_ACCOUNT_ID",
-    mini_qmt_path=r"D:\miniQMT",
+    mini_qmt_path=r"D:\QMT\userdata_mini",
     host="0.0.0.0",
     port=8000,
     api_key="REPLACE_WITH_API_KEY",
@@ -205,33 +205,45 @@ mkdir C:\qka\logs -Force
 - `CN/SAN` 必须包含客户端实际访问的域名/IP。
 - 有效期、续期计划、证书吊销策略需要提前制定。
 
-### 3. 解决 Windows OpenSSL `openssl.cnf` 报错（你遇到的典型问题）
+如果**没有公网域名、只有公网 IP**，也可以继续使用自签证书；此时只需要让证书里的 `SAN` 包含该公网 IP。推荐做法：
 
-当出现：
+1. 修改仓库根目录的 `openssl.cnf`：
 
-`Can't open "C:\Program Files\Common Files\ssl\/openssl.cnf" for reading`
+   ```ini
+   [ dn ]
+   CN = 你的公网IP
 
-说明 OpenSSL 找不到配置文件。可选修复方式：
+   [ alt_names ]
+   IP.1  = 你的公网IP
+   IP.2  = 127.0.0.1
+   DNS.1 = localhost
+   ```
 
-#### 方式 A：设置环境变量（推荐）
+   - 如果客户端**只会通过公网 IP** 访问，可以只保留公网 IP。
+   - 如果你还要在服务端本机联调，建议保留 `127.0.0.1` / `localhost`。
+   - 没有域名时，不需要强行填写 `DNS.1 = 你的公网IP`；把公网 IP 放到 `IP.x` 即可。
 
-```powershell
-$env:OPENSSL_CONF="C:\Program Files\OpenSSL-Win64\bin\openssl.cfg"
-```
+2. 重新执行仓库命令（命令本身通常不用改）：
 
-> 路径按你本机 OpenSSL 实际安装位置调整；可先 `where openssl` 确认。
+   ```powershell
+   .\generate_qka_certs.bat
+   ```
 
-#### 方式 B：命令中显式指定配置文件
+3. 客户端把访问地址改为公网 IP，并显式信任生成出来的 `ca.pem`：
 
-```powershell
-openssl req -config "C:\Program Files\OpenSSL-Win64\bin\openssl.cfg" -x509 -nodes -newkey rsa:2048 `
-  -keyout C:\qka\certs\server.key `
-  -out C:\qka\certs\server.crt `
-  -days 365 `
-  -subj "/C=CN/ST=Beijing/L=Beijing/O=QKA/OU=Trading/CN=qmt.example.local"
-```
+   ```python
+   client = QMTClient(
+       base_url="https://你的公网IP:8443",
+       api_key="PROD_API_KEY",
+       api_secret="PROD_API_SECRET",
+       verify=r"C:\\qka\\certs\\ca.pem",
+       timeout=10,
+   )
+   ```
 
-### 4. 生产服务端启动脚本（环境变量读取敏感信息）
+4. 如果公网 IP 后续发生变化，必须重新修改 `openssl.cnf` 并重新签发证书；否则会出现证书名称不匹配。
+
+### 3. 生产服务端启动脚本（环境变量读取敏感信息）
 
 新建 `C:\qka\run\start_server_prod.py`：
 
@@ -262,7 +274,7 @@ server.start()
 参数说明（服务端）：
 
 - `account_id`：券商资金账号（字符串）。
-- `mini_qmt_path`：miniQMT 安装目录，例如 `D:\miniQMT`。
+- `mini_qmt_path`：QMT 中 `userdata_mini` 路径，例如 `D:\QMT\userdata_mini`。
 - `host`：监听地址，生产建议仅内网地址；若用 `0.0.0.0` 必须配防火墙白名单。
 - `port`：监听端口，建议固定 `8443`。
 - `ssl_certfile`：服务器证书文件路径（`.crt`/`.pem`）。
@@ -275,7 +287,7 @@ server.start()
 
 ```powershell
 $env:QKA_ACCOUNT_ID="YOUR_ACCOUNT_ID"
-$env:QKA_MINI_QMT_PATH="D:\miniQMT"
+$env:QKA_MINI_QMT_PATH="D:\QMT\userdata_mini"
 $env:QKA_API_KEY="REPLACE_WITH_API_KEY"
 $env:QKA_API_SECRET="REPLACE_WITH_A_LONG_RANDOM_SECRET"
 python C:\qka\run\start_server_prod.py
@@ -283,7 +295,7 @@ python C:\qka\run\start_server_prod.py
 
 > 生产中不要把 api_secret 硬编码到仓库文件。
 
-### 5. 防火墙最小开放策略（必须）
+### 4. 防火墙最小开放策略（必须）
 
 仅允许可信来源访问 8443。示例（将 `10.10.10.20` 替换为策略机 IP）：
 
@@ -293,7 +305,7 @@ New-NetFirewallRule -DisplayName "QKA HTTPS Inbound" -Direction Inbound -Action 
 
 若存在旧的 8000 明文端口策略，请删除或禁用对应规则。
 
-### 6. 生产客户端示例（启用证书校验）
+### 5. 生产客户端示例（启用证书校验）
 
 ```python
 from qka import QMTClient
@@ -325,7 +337,7 @@ print(client.api("query_stock_asset"))
 - 生产禁止长期 `verify=False`。
 - 若是内网 CA，客户端必须安装/信任对应 CA。
 
-### 7. 生产验收检查清单（逐项打勾）
+### 6. 生产验收检查清单（逐项打勾）
 
 1. 使用 `https://` 地址可访问服务。
 2. 缺少签名头请求返回 401。
@@ -334,14 +346,14 @@ print(client.api("query_stock_asset"))
 5. 错误签名、重复 Nonce、错误来源 IP 被拒绝。
 6. 证书过期时间已登记到监控/日历（提前 30 天提醒）。
 
-### 8. 运行维护（建议）
+### 7. 运行维护（建议）
 
 - **API Secret 轮换**：按周/月轮换，并在策略端同步更新。
 - **证书轮换**：至少年更，过期前完成灰度替换。
 - **日志审计**：记录调用来源、接口名、时间、结果摘要（避免泄露敏感字段）。
 - **灾备演练**：定期验证服务重启、证书替换、API Secret 轮换流程。
 
-### 9. 常见故障快速定位（生产高频）
+### 8. 常见故障快速定位（生产高频）
 
 1. `SSL: CERTIFICATE_VERIFY_FAILED`
    - 客户端未信任签发 CA；或域名与证书不匹配。
@@ -350,4 +362,4 @@ print(client.api("query_stock_asset"))
 3. 连接超时
    - 防火墙未放行、端口未监听、证书路径错误导致服务启动失败。
 4. OpenSSL 配置文件错误
-   - 按“第 3 节”设置 `OPENSSL_CONF` 或 `-config` 参数。
+   - 优先在仓库根目录执行 `generate_qka_certs.bat`，使用仓库内 `openssl.cnf` 生成证书。
