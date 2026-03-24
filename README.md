@@ -205,6 +205,44 @@ mkdir C:\qka\logs -Force
 - `CN/SAN` 必须包含客户端实际访问的域名/IP。
 - 有效期、续期计划、证书吊销策略需要提前制定。
 
+如果**没有公网域名、只有公网 IP**，也可以继续使用自签证书；此时只需要让证书里的 `SAN` 包含该公网 IP。推荐做法：
+
+1. 修改仓库根目录的 `openssl.cnf`：
+
+   ```ini
+   [ dn ]
+   CN = 你的公网IP
+
+   [ alt_names ]
+   IP.1  = 你的公网IP
+   IP.2  = 127.0.0.1
+   DNS.1 = localhost
+   ```
+
+   - 如果客户端**只会通过公网 IP** 访问，可以只保留公网 IP。
+   - 如果你还要在服务端本机联调，建议保留 `127.0.0.1` / `localhost`。
+   - 没有域名时，不需要强行填写 `DNS.1 = 你的公网IP`；把公网 IP 放到 `IP.x` 即可。
+
+2. 重新执行仓库命令（命令本身通常不用改）：
+
+   ```powershell
+   .\generate_qka_certs.bat
+   ```
+
+3. 客户端把访问地址改为公网 IP，并显式信任生成出来的 `ca.pem`：
+
+   ```python
+   client = QMTClient(
+       base_url="https://你的公网IP:8443",
+       api_key="PROD_API_KEY",
+       api_secret="PROD_API_SECRET",
+       verify=r"C:\\qka\\certs\\ca.pem",
+       timeout=10,
+   )
+   ```
+
+4. 如果公网 IP 后续发生变化，必须重新修改 `openssl.cnf` 并重新签发证书；否则会出现证书名称不匹配。
+
 ### 3. 生产服务端启动脚本（环境变量读取敏感信息）
 
 新建 `C:\qka\run\start_server_prod.py`：
